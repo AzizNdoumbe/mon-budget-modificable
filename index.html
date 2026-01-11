@@ -1738,13 +1738,19 @@
                             />
                           </div>
                           <div className="flex items-center gap-2">
-                            <input
-                              type="color"
-                              value={newCategoryColor}
-                              onChange={(e) => setNewCategoryColor(e.target.value)}
-                              className="h-10 w-10 cursor-pointer rounded-full border-2 border-gray-300"
-                              title="Choisir une couleur"
-                            />
+                            <label className="relative cursor-pointer">
+                              <input
+                                type="color"
+                                value={newCategoryColor}
+                                onChange={(e) => setNewCategoryColor(e.target.value)}
+                                className="absolute opacity-0 w-0 h-0"
+                              />
+                              <div 
+                                className="h-10 w-10 rounded-full border-2 border-gray-300 cursor-pointer hover:scale-110 transition-transform"
+                                style={{ backgroundColor: newCategoryColor }}
+                                title="Choisir une couleur"
+                              ></div>
+                            </label>
                           </div>
                         </div>
                         <label className="flex items-center gap-2 cursor-pointer">
@@ -1786,16 +1792,8 @@
                   </div>
                   
                   <div className="space-y-3">
-                    {/* Afficher TOUTES les catégories y compris exceptionnel et depense */}
+                    {/* Afficher TOUTES les catégories */}
                     {Object.entries(monthlyBudget.categories)
-                      .concat([
-                        ['exceptionnel', { nom: 'Exceptionnel', budget: 0, color: '#9CA3AF', showInDashboard: false }],
-                        ['depense', { nom: 'Autre dépense', budget: 0, color: '#6B7280', showInDashboard: false }]
-                      ])
-                      .filter(([key, cat], index, self) => 
-                        // Éviter les doublons si exceptionnel/depense existent déjà
-                        self.findIndex(([k]) => k === key) === index
-                      )
                       .map(([key, cat]) => (
                       <div 
                         key={key}
@@ -1829,13 +1827,19 @@
                                 />
                               </div>
                               <div className="flex items-center gap-2">
-                                <input
-                                  type="color"
-                                  value={newCategoryColor}
-                                  onChange={(e) => setNewCategoryColor(e.target.value)}
-                                  className="h-10 w-10 cursor-pointer rounded-full border-2 border-gray-300"
-                                  title="Choisir une couleur"
-                                />
+                                <label className="relative cursor-pointer">
+                                  <input
+                                    type="color"
+                                    value={newCategoryColor}
+                                    onChange={(e) => setNewCategoryColor(e.target.value)}
+                                    className="absolute opacity-0 w-0 h-0"
+                                  />
+                                  <div 
+                                    className="h-10 w-10 rounded-full border-2 border-gray-300 cursor-pointer hover:scale-110 transition-transform"
+                                    style={{ backgroundColor: newCategoryColor }}
+                                    title="Choisir une couleur"
+                                  ></div>
+                                </label>
                               </div>
                             </div>
                             <label className="flex items-center gap-2 cursor-pointer">
@@ -1900,7 +1904,7 @@
                                 </div>
                                 {cat.showInDashboard && (
                                   <div className="text-xs italic text-orange-600 mt-0.5">
-                                    ✨ Affichée sur l'accueil
+                                    Affichée sur l'accueil
                                   </div>
                                 )}
                               </div>
