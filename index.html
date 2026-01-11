@@ -1824,8 +1824,23 @@
                   </div>
                   
                   <div className="space-y-3">
-                    {/* Afficher TOUTES les catégories */}
+                    {/* Afficher TOUTES les catégories dans un ordre stable */}
                     {Object.entries(monthlyBudget.categories)
+                      .sort(([keyA], [keyB]) => {
+                        // Catégories de base en premier dans l'ordre fixe
+                        const categoriesDeBase = ['copine', 'perso', 'pea', 'crypto'];
+                        const indexA = categoriesDeBase.indexOf(keyA);
+                        const indexB = categoriesDeBase.indexOf(keyB);
+                        
+                        // Si les deux sont des catégories de base, garder l'ordre défini
+                        if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+                        // Si A est de base et B custom, A avant
+                        if (indexA !== -1) return -1;
+                        // Si B est de base et A custom, B avant
+                        if (indexB !== -1) return 1;
+                        // Les deux sont custom : ordre alphabétique
+                        return keyA.localeCompare(keyB);
+                      })
                       .map(([key, cat]) => (
                       <div 
                         key={key}
@@ -2311,6 +2326,15 @@
                           <optgroup label="📊 Catégories principales">
                             {Object.entries(monthlyBudget.categories)
                               .filter(([key, cat]) => cat.showInDashboard)
+                              .sort(([keyA], [keyB]) => {
+                                const categoriesDeBase = ['copine', 'perso', 'pea', 'crypto'];
+                                const indexA = categoriesDeBase.indexOf(keyA);
+                                const indexB = categoriesDeBase.indexOf(keyB);
+                                if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+                                if (indexA !== -1) return -1;
+                                if (indexB !== -1) return 1;
+                                return keyA.localeCompare(keyB);
+                              })
                               .map(([key, cat]) => (
                                 <option key={key} value={key}>
                                   {cat.nom} (Budget: {formatMoney(cat.budget)})
@@ -2322,6 +2346,7 @@
                             <optgroup label="📁 Autres catégories">
                               {Object.entries(monthlyBudget.categories)
                                 .filter(([key, cat]) => !cat.showInDashboard)
+                                .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
                                 .map(([key, cat]) => (
                                   <option key={key} value={key}>
                                     {cat.nom} (Budget: {formatMoney(cat.budget)})
