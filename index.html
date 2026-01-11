@@ -31,67 +31,42 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
     
-   <script>
-     // ======================
-     // 1) Configuration
-     // ======================
-     const firebaseConfig = {
-       apiKey: "AIzaSyAr-ZeoQ_IfmbPTlGSXN1AxoiJAODRCaTM",
-       authDomain: "budget-ebe8d.firebaseapp.com",
-       projectId: "budget-ebe8d",
-       storageBucket: "budget-ebe8d.firebasestorage.app",
-       messagingSenderId: "671712360301",
-       appId: "1:671712360301:web:fe430143abf41f30bc4c64"
-     };
-
-     // ======================
-     // 2) Initialisation
-     // ======================
-     firebase.initializeApp(firebaseConfig);
-
-     const auth = firebase.auth();
-     const db = firebase.firestore();
-
-     // ======================
-     // 3) Authentification obligatoire
-     // ======================
-     auth.onAuthStateChanged(async (user) => {
-       if (!user) {
-         const provider = new firebase.auth.GoogleAuthProvider();
-         await auth.signInWithPopup(provider);
-         return;
-       }
-
-       // ======================
-       // 4) Chargement sécurisé de l'app
-       // ======================
-       startApplication(user);
-     });
-
-     // ======================
-     // 5) Lancement de l'app
-     // ======================
-     async function startApplication(user) {
-       console.log("Connecté :", user.email);
-
-       const docRef = db.collection("state").doc(user.uid);
-       const snap = await docRef.get();
-
-       if (!snap.exists) {
-         await docRef.set({ createdAt: firebase.firestore.FieldValue.serverTimestamp() });
-       }
-
-       const initialState = (await docRef.get()).data();
-
-       if (!initialState) {
-         alert("Erreur : impossible de charger l'état initial");
-         return;
-       }
-
-       // 👉 ICI tu continues ton app normalement
-       console.log("Initial state chargé :", initialState);
-     }
-   </script>
+    <script>
+      // Configuration Firebase
+      const firebaseConfig = {
+        apiKey: "AIzaSyAr-ZeoQ_IfmbPTlGSXN1AxoiJAODRCaTM",
+        authDomain: "budget-ebe8d.firebaseapp.com",
+        projectId: "budget-ebe8d",
+        storageBucket: "budget-ebe8d.firebasestorage.app",
+        messagingSenderId: "671712360301",
+        appId: "1:671712360301:web:fe430143abf41f30bc4c64"
+      };
+      
+      // Initialiser Firebase
+      firebase.initializeApp(firebaseConfig);
+      const auth = firebase.auth();
+      const db = firebase.firestore();
+      
+      // IMPORTANT : Configurer la persistence AVANT toute opération auth
+      // Pour iOS/PWA : essayer LOCAL, sinon fallback sur SESSION
+      const setupPersistence = async () => {
+        try {
+          await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+          console.log('✅ Persistence LOCAL activée');
+        } catch (error) {
+          console.warn('⚠️ LOCAL persistence échouée, essai SESSION:', error);
+          try {
+            await auth.setPersistence(firebase.auth.Auth.Persistence.SESSION);
+            console.log('✅ Persistence SESSION activée');
+          } catch (sessionError) {
+            console.error('❌ Impossible de configurer persistence:', sessionError);
+          }
+        }
+      };
+      
+      // Lancer la config persistence immédiatement
+      setupPersistence();
+    </script>
     
     <style>
       /* Empêcher le zoom sur iOS */
@@ -190,9 +165,7 @@
           const [monthlyBudget, setMonthlyBudget] = useState({
             revenus: 1355,
             chargesfixes: 0,
-            jourPaiementSalaire: 24,
-            showPEAPage: true,
-            showCryptoPage: true,
+            jourPaiementSalaire: 24, // Jour du mois où le salaire arrive
             categories: {
               copine: { nom: "Capucine", budget: 230, color: "#FF6B9D", showInDashboard: true },
               perso: { nom: "Dépenses perso", budget: 80, color: "#FFA07A", showInDashboard: true },
@@ -206,6 +179,8 @@
           const [soldePEA, setSoldePEA] = useState(0);
           const [soldeCrypto, setSoldeCrypto] = useState(0);
           const [depenses, setDepenses] = useState([]);
+          const [statsArchivees, setStatsArchivees] = useState({});
+          // Structure: { "2026-0": { depenses: {...}, total: 0, date: Date }, "2026-1": {...} }
           const [chargesFixesAuto, setChargesFixesAuto] = useState([]);
           const [chargesPayees, setChargesPayees] = useState({});
           const [showAddForm, setShowAddForm] = useState(false);
@@ -291,6 +266,7 @@
                   setSoldePEA(data.soldePEA || 0);
                   setSoldeCrypto(data.soldeCrypto || 0);
                   setDepenses(data.depenses || []);
+                  setStatsArchivees(data.statsArchivees || {});
                   setChargesFixesAuto(data.chargesFixesAuto || []);
                   setChargesPayees(data.chargesPayees || {});
                   setDarkMode(data.darkMode || false);
@@ -341,6 +317,7 @@
                 soldePEA,
                 soldeCrypto,
                 depenses,
+                statsArchivees,
                 chargesFixesAuto,
                 chargesPayees,
                 monthlyBudget,
@@ -366,17 +343,59 @@
                 clearTimeout(saveTimeoutRef.current);
               }
             };
-          }, [user, soldeCompte, soldePEA, soldeCrypto, depenses, chargesFixesAuto, chargesPayees, monthlyBudget]);
+          }, [user, soldeCompte, soldePEA, soldeCrypto, depenses, statsArchivees, chargesFixesAuto, chargesPayees, monthlyBudget]);
 
-          // Redirection si page désactivée
+          // Archivage automatique des statistiques chaque mois
           useEffect(() => {
-            if (view === 'pea' && monthlyBudget.showPEAPage === false) {
-              setView('dashboard');
-            }
-            if (view === 'crypto' && monthlyBudget.showCryptoPage === false) {
-              setView('dashboard');
-            }
-          }, [view, monthlyBudget.showPEAPage, monthlyBudget.showCryptoPage]);
+            const checkMonthChange = () => {
+              const now = new Date();
+              const currentMonthKey = `${now.getFullYear()}-${now.getMonth()}`;
+              const lastChecked = localStorage.getItem('lastMonthChecked');
+              
+              if (lastChecked && lastChecked !== currentMonthKey) {
+                // Nouveau mois détecté, archiver le mois précédent
+                const lastMonthParts = lastChecked.split('-');
+                const lastYear = parseInt(lastMonthParts[0]);
+                const lastMonth = parseInt(lastMonthParts[1]);
+                
+                // Calculer totaux du mois précédent
+                const totauxMoisPrecedent = {};
+                Object.keys(monthlyBudget.categories).forEach(key => {
+                  totauxMoisPrecedent[key] = 0;
+                });
+                totauxMoisPrecedent['exceptionnel'] = 0;
+                totauxMoisPrecedent['depense'] = 0;
+                
+                depenses.forEach(dep => {
+                  const depDate = new Date(dep.date);
+                  if (depDate.getMonth() === lastMonth && depDate.getFullYear() === lastYear) {
+                    totauxMoisPrecedent[dep.categorie] = (totauxMoisPrecedent[dep.categorie] || 0) + parseAmount(dep.montant);
+                  }
+                });
+                
+                const totalMoisPrecedent = Object.values(totauxMoisPrecedent).reduce((sum, val) => sum + val, 0);
+                
+                // Archiver
+                setStatsArchivees(prev => ({
+                  ...prev,
+                  [lastChecked]: {
+                    depenses: totauxMoisPrecedent,
+                    total: totalMoisPrecedent,
+                    date: new Date(lastYear, lastMonth, 1)
+                  }
+                }));
+                
+                console.log(`📊 Stats de ${lastChecked} archivées automatiquement`);
+              }
+              
+              localStorage.setItem('lastMonthChecked', currentMonthKey);
+            };
+            
+            checkMonthChange();
+            const interval = setInterval(checkMonthChange, 3600000); // Check toutes les heures
+            
+            return () => clearInterval(interval);
+          }, [depenses, monthlyBudget.categories]);
 
           // Système de notifications pour charges programmées
           useEffect(() => {
@@ -572,10 +591,6 @@
           };
 
           const handleDeleteDepense = (id) => {
-            const depense = depenses.find(d => d.id === id);
-            if (depense) {
-              setSoldeCompte(prevSolde => prevSolde + parseAmount(depense.montant));
-            }
             setDepenses(depenses.filter(d => d.id !== id));
           };
 
@@ -668,6 +683,10 @@
 
           // Écran de connexion
           if (!user) {
+            // DÉSACTIVÉ TEMPORAIREMENT : problème de détection standalone
+            const isStandalone = false;
+            const currentUrl = window.location.href;
+            
             return (
               <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-4">
                 <div className="w-full max-w-md">
@@ -678,32 +697,64 @@
                       <p className="text-gray-600">Gérez votre budget en temps réel</p>
                     </div>
                     
-                    <div className="space-y-4">
-                      <button
-                        onClick={signInWithGoogle}
-                        className="w-full rounded-xl bg-white border-2 border-gray-300 px-6 py-4 font-semibold text-gray-700 shadow-md transition hover:bg-gray-50 hover:shadow-lg flex items-center justify-center gap-3"
-                      >
-                        <svg width="24" height="24" viewBox="0 0 24 24">
-                          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                        </svg>
-                        Se connecter avec Google
-                      </button>
-                    </div>
-                    
-                    <div className="mt-6 text-center text-xs text-gray-500">
-                      <p>Vos données seront synchronisées</p>
-                      <p>entre tous vos appareils</p>
-                    </div>
+                    {isStandalone ? (
+                      // En mode PWA : proposer d'ouvrir dans Safari
+                      <div className="space-y-4">
+                        <div className="rounded-xl bg-orange-50 border-2 border-orange-200 p-4 text-center">
+                          <div className="mb-2 text-3xl">⚠️</div>
+                          <p className="text-sm font-medium text-orange-900 mb-2">
+                            La connexion Google ne fonctionne pas en mode application
+                          </p>
+                          <p className="text-xs text-orange-700">
+                            Veuillez vous connecter une première fois via Safari
+                          </p>
+                        </div>
+                        
+                        <a
+                          href={currentUrl}
+                          target="_blank"
+                          className="block w-full rounded-xl bg-blue-600 px-6 py-4 font-semibold text-white shadow-md transition hover:bg-blue-700 text-center"
+                        >
+                          🌐 Ouvrir dans Safari
+                        </a>
+                        
+                        <div className="text-center text-xs text-gray-500">
+                          <p className="font-medium mb-1">📱 Après connexion dans Safari :</p>
+                          <p>1. Revenez à cette application</p>
+                          <p>2. Elle se rechargera automatiquement connectée</p>
+                        </div>
+                      </div>
+                    ) : (
+                      // En mode navigateur normal : bouton Google standard
+                      <div className="space-y-4">
+                        <button
+                          onClick={signInWithGoogle}
+                          className="w-full rounded-xl bg-white border-2 border-gray-300 px-6 py-4 font-semibold text-gray-700 shadow-md transition hover:bg-gray-50 hover:shadow-lg flex items-center justify-center gap-3"
+                        >
+                          <svg width="24" height="24" viewBox="0 0 24 24">
+                            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                          </svg>
+                          Se connecter avec Google
+                        </button>
+                        
+                        <div className="mt-6 text-center text-xs text-gray-500">
+                          <p>Vos données seront synchronisées</p>
+                          <p>entre tous vos appareils</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   
-                  <div className="mt-8 text-center text-sm text-gray-600">
-                    <p>✅ Synchronisation temps réel</p>
-                    <p>🔒 Données sécurisées et privées</p>
-                    <p>📱 Fonctionne sur PC et iPhone</p>
-                  </div>
+                  {!isStandalone && (
+                    <div className="mt-8 text-center text-sm text-gray-600">
+                      <p>✅ Synchronisation temps réel</p>
+                      <p>🔒 Données sécurisées et privées</p>
+                      <p>📱 Fonctionne sur PC et iPhone</p>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -728,71 +779,19 @@
                       <span>Charges à payer aujourd'hui</span>
                     </div>
                     {notifications.map(notif => (
-                      <div key={notif.id} className={`mt-2 rounded-lg p-3 ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                        <div className="flex items-center justify-between mb-3">
-                          <div>
-                            <div className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-800'}`}>{notif.chargeName}</div>
-                            <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                              {editingCharge === notif.chargeId ? (
-                                <div className="flex items-center gap-2 mt-1">
-                                  <input
-                                    type="number"
-                                    step="0.01"
-                                    value={editMontant}
-                                    onChange={(e) => setEditMontant(e.target.value)}
-                                    className={`w-24 rounded-lg border-2 px-2 py-1 text-sm ${darkMode ? "bg-gray-700 border-red-600 text-white" : "border-red-300"}`}
-                                    autoFocus
-                                  />
-                                  <span>€</span>
-                                </div>
-                              ) : (
-                                formatMoney(notif.montant)
-                              )}
-                            </div>
-                          </div>
+                      <div key={notif.id} className={`mt-2 flex items-center justify-between rounded-lg p-3 ${
+                        darkMode ? 'bg-gray-800' : 'bg-white'
+                      }`}>
+                        <div>
+                          <div className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-800'}`}>{notif.chargeName}</div>
+                          <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>{formatMoney(notif.montant)}</div>
                         </div>
-                        <div className="flex gap-2">
-                          {editingCharge === notif.chargeId ? (
-                            <>
-                              <button
-                                onClick={() => {
-                                  if (editMontant && parseAmount(editMontant) > 0) {
-                                    const updatedCharges = chargesFixesAuto.map(c => 
-                                      c.id === notif.chargeId ? { ...c, montant: parseAmount(editMontant) } : c
-                                    );
-                                    setChargesFixesAuto(updatedCharges);
-                                  }
-                                  setEditingCharge(null);
-                                  setEditMontant('');
-                                }}
-                                className="flex-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700"
-                              >
-                                ✅ Confirmer
-                              </button>
-                              <button
-                                onClick={() => { setEditingCharge(null); setEditMontant(''); }}
-                                className={`flex-1 rounded-lg px-4 py-2 text-sm font-semibold ${darkMode ? "bg-gray-600 text-white hover:bg-gray-500" : "bg-gray-200 text-gray-700 hover:bg-gray-300"}`}
-                              >
-                                ❌ Annuler
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <button
-                                onClick={() => { setEditingCharge(notif.chargeId); setEditMontant(notif.montant.toString()); }}
-                                className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium ${darkMode ? "bg-gray-700 border border-red-600 text-red-400 hover:bg-gray-600" : "bg-white border border-red-300 text-red-700 hover:bg-red-50"}`}
-                              >
-                                ✏️ Modifier montant
-                              </button>
-                              <button
-                                onClick={() => toggleChargePaiement(notif.chargeId)}
-                                className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
-                              >
-                                ✅ Valider le paiement
-                              </button>
-                            </>
-                          )}
-                        </div>
+                        <button
+                          onClick={() => toggleChargePaiement(notif.chargeId)}
+                          className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                        >
+                          Valider le paiement
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -1042,17 +1041,110 @@
           };
 
           const StatsView = () => {
-            const total = Object.values(monthlyTotals).reduce((sum, val) => sum + val, 0);
+            const [selectedMonthKey, setSelectedMonthKey] = useState(() => {
+              const now = new Date();
+              return `${now.getFullYear()}-${now.getMonth()}`;
+            });
+            
+            // Calculer totaux pour le mois sélectionné
+            const getMonthTotals = (monthKey) => {
+              const [year, month] = monthKey.split('-').map(Number);
+              const totals = {};
+              Object.keys(monthlyBudget.categories).forEach(key => {
+                totals[key] = 0;
+              });
+              totals['exceptionnel'] = 0;
+              totals['depense'] = 0;
+              
+              depenses.forEach(dep => {
+                const depDate = new Date(dep.date);
+                if (depDate.getMonth() === month && depDate.getFullYear() === year) {
+                  totals[dep.categorie] = (totals[dep.categorie] || 0) + parseAmount(dep.montant);
+                }
+              });
+              
+              return totals;
+            };
+            
+            const currentMonthKey = (() => {
+              const now = new Date();
+              return `${now.getFullYear()}-${now.getMonth()}`;
+            })();
+            
+            const isCurrentMonth = selectedMonthKey === currentMonthKey;
+            
+            // Si mois actuel, calculer en temps réel, sinon prendre archive
+            const displayTotals = isCurrentMonth 
+              ? getMonthTotals(selectedMonthKey)
+              : (statsArchivees[selectedMonthKey]?.depenses || {});
+            
+            const total = Object.values(displayTotals).reduce((sum, val) => sum + val, 0);
+            
+            const getMonthName = (monthKey) => {
+              const [year, month] = monthKey.split('-').map(Number);
+              const date = new Date(year, month);
+              return date.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+            };
+            
+            // Liste des mois disponibles (mois actuel + archives)
+            const availableMonths = [
+              currentMonthKey,
+              ...Object.keys(statsArchivees).sort().reverse()
+            ].filter((v, i, a) => a.indexOf(v) === i); // Dédupliquer
             
             return (
               <div className="space-y-6">
-                <h3 className={`text-2xl font-bold ${darkMode ? "text-white" : "text-gray-800"}`}>Statistiques {getCurrentMonth()}</h3>
+                <h3 className={`text-2xl font-bold ${darkMode ? "text-white" : "text-gray-800"}`}>
+                  📊 Statistiques {getMonthName(selectedMonthKey)}
+                </h3>
                 
+                {/* Sélecteur de mois - uniquement si plusieurs mois */}
+                {availableMonths.length > 1 && (
+                  <div className={`rounded-2xl p-4 ${darkMode ? "bg-gray-800" : "bg-white"}`}>
+                    <h4 className={`mb-3 text-sm font-medium ${darkMode ? "text-gray-400" : "text-gray-600"}`}>
+                      📅 Historique
+                    </h4>
+                    <div className="space-y-2">
+                      {availableMonths.map(monthKey => (
+                        <button
+                          key={monthKey}
+                          onClick={() => setSelectedMonthKey(monthKey)}
+                          className={`w-full rounded-lg px-4 py-3 text-left text-sm font-medium transition ${
+                            selectedMonthKey === monthKey
+                              ? darkMode
+                                ? "bg-indigo-600 text-white"
+                                : "bg-indigo-500 text-white"
+                              : darkMode
+                                ? "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span>{getMonthName(monthKey)}</span>
+                            {monthKey === currentMonthKey && (
+                              <span className={`text-xs px-2 py-0.5 rounded ${
+                                selectedMonthKey === monthKey 
+                                  ? "bg-white/20 text-white" 
+                                  : darkMode ? "bg-indigo-900/30 text-indigo-300" : "bg-indigo-100 text-indigo-700"
+                              }`}>
+                                En cours
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Stats du mois sélectionné */}
                 <div className={`rounded-2xl p-6 shadow-lg ${darkMode ? "bg-gray-800" : "bg-white"}`}>
-                  <h4 className={`mb-4 font-bold ${darkMode ? "text-gray-300" : "text-gray-700"}`}>Répartition des dépenses</h4>
+                  <h4 className={`mb-4 font-bold ${darkMode ? "text-gray-300" : "text-gray-700"}`}>
+                    Répartition des dépenses
+                  </h4>
                   <div className="space-y-3">
                     {Object.entries(monthlyBudget.categories).map(([key, cat]) => {
-                      const depense = monthlyTotals[key] || 0;
+                      const depense = displayTotals[key] || 0;
                       const pourcentage = total > 0 ? (depense / total) * 100 : 0;
                       
                       return (
@@ -1077,21 +1169,24 @@
                     })}
                     
                     {/* Autre (Dépenses + Charges exceptionnelles) */}
-                    {(monthlyTotals['exceptionnel'] > 0 || monthlyTotals['depense'] > 0) && (
+                    {(displayTotals['exceptionnel'] > 0 || displayTotals['depense'] > 0) && (
                       <div>
                         <div className="mb-1 flex items-center justify-between text-sm">
                           <span className={`font-medium ${darkMode ? "text-gray-300" : "text-gray-700"}`}>Autre</span>
-                          <span className={`font-bold ${darkMode ? "text-white" : "text-gray-800"}`}>{formatMoney((monthlyTotals['exceptionnel'] || 0) + (monthlyTotals['depense'] || 0))}</span>
+                          <span className={`font-bold ${darkMode ? "text-white" : "text-gray-800"}`}>
+                            {formatMoney((displayTotals['exceptionnel'] || 0) + (displayTotals['depense'] || 0))}
+                          </span>
                         </div>
                         <div className={`relative h-8 overflow-hidden rounded-lg ${darkMode ? "bg-gray-700" : "bg-gray-100"}`}>
                           <div
                             className="flex h-full items-center justify-end px-3 text-xs font-bold text-white transition-all duration-500"
                             style={{
-                              width: `${total > 0 ? (((monthlyTotals['exceptionnel'] || 0) + (monthlyTotals['depense'] || 0)) / total) * 100 : 0}%`,
+                              width: `${total > 0 ? (((displayTotals['exceptionnel'] || 0) + (displayTotals['depense'] || 0)) / total) * 100 : 0}%`,
                               backgroundColor: '#6B7280'
                             }}
                           >
-                            {total > 0 && (((monthlyTotals['exceptionnel'] || 0) + (monthlyTotals['depense'] || 0)) / total) * 100 > 15 && `${((((monthlyTotals['exceptionnel'] || 0) + (monthlyTotals['depense'] || 0)) / total) * 100).toFixed(0)}%`}
+                            {total > 0 && (((displayTotals['exceptionnel'] || 0) + (displayTotals['depense'] || 0)) / total) * 100 > 15 && 
+                              `${((((displayTotals['exceptionnel'] || 0) + (displayTotals['depense'] || 0)) / total) * 100).toFixed(0)}%`}
                           </div>
                         </div>
                       </div>
@@ -1099,8 +1194,12 @@
                   </div>
                   
                   <div className={`mt-6 rounded-xl p-4 ${darkMode ? "bg-indigo-900/30" : "bg-indigo-50"}`}>
-                    <div className={`text-sm ${darkMode ? "text-indigo-400" : "text-indigo-700"}`}>Total dépensé ce mois</div>
-                    <div className={`text-3xl font-bold ${darkMode ? "text-indigo-200" : "text-indigo-900"}`}>{formatMoney(total)}</div>
+                    <div className={`text-sm ${darkMode ? "text-indigo-400" : "text-indigo-700"}`}>
+                      Total dépensé {isCurrentMonth ? "ce mois" : ""}
+                    </div>
+                    <div className={`text-3xl font-bold ${darkMode ? "text-indigo-200" : "text-indigo-900"}`}>
+                      {formatMoney(total)}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1558,78 +1657,32 @@
                   </div>
                 </div>
 
-                {/* Pages PEA et Crypto */}
-                <div className={`rounded-2xl p-6 shadow-lg ${darkMode ? "bg-gray-800" : "bg-white"}`}>
-                  <h4 className={`mb-4 text-lg font-bold ${darkMode ? "text-white" : "text-gray-800"}`}>
-                    📄 Affichage des pages
-                  </h4>
-                  <div className="space-y-3">
-                    <label className={`flex items-center justify-between p-4 rounded-lg cursor-pointer ${darkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-gray-50 hover:bg-gray-100"}`}>
-                      <div>
-                        <div className={`font-medium ${darkMode ? "text-white" : "text-gray-800"}`}>Page PEA</div>
-                        <div className={`text-sm ${darkMode ? "text-gray-400" : "text-gray-600"}`}>Afficher l'onglet et la page PEA</div>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={monthlyBudget.showPEAPage !== false}
-                        onChange={(e) => setMonthlyBudget({...monthlyBudget, showPEAPage: e.target.checked})}
-                        className="h-6 w-6 cursor-pointer rounded"
-                      />
-                    </label>
-                    <label className={`flex items-center justify-between p-4 rounded-lg cursor-pointer ${darkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-gray-50 hover:bg-gray-100"}`}>
-                      <div>
-                        <div className={`font-medium ${darkMode ? "text-white" : "text-gray-800"}`}>Page Crypto</div>
-                        <div className={`text-sm ${darkMode ? "text-gray-400" : "text-gray-600"}`}>Afficher l'onglet et la page Crypto</div>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={monthlyBudget.showCryptoPage !== false}
-                        onChange={(e) => setMonthlyBudget({...monthlyBudget, showCryptoPage: e.target.checked})}
-                        className="h-6 w-6 cursor-pointer rounded"
-                      />
-                    </label>
-                  </div>
-                </div>
-
                 {/* Gestion des catégories */}
                 <div className={`rounded-2xl p-6 shadow-lg ${darkMode ? "bg-gray-800" : "bg-white"}`}>
-                  <h4 className={`mb-4 text-lg font-bold ${darkMode ? "text-white" : "text-gray-800"}`}>
-                    📊 Catégories de dépenses affichées
-                  </h4>
-                  
-                  <div className="space-y-3">
-                    {Object.entries(monthlyBudget.categories).map(([key, cat]) => (
-                      <div 
-                        key={key}
-                        className={`rounded-lg p-4 ${darkMode ? "bg-gray-700" : "bg-gray-50"}`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="h-6 w-6 rounded-full" style={{ backgroundColor: cat.color }}></div>
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <div className={`font-bold ${darkMode ? "text-white" : "text-gray-800"}`}>{cat.nom}</div>
-                                {cat.showInDashboard && (
-                                  <span className={`text-xs px-2 py-0.5 rounded ${darkMode ? "bg-indigo-900/30 text-indigo-300" : "bg-indigo-100 text-indigo-700"}`}>Principale</span>
-                                )}
-                              </div>
-                              <div className={`text-sm ${darkMode ? "text-gray-400" : "text-gray-600"}`}>Budget : {formatMoney(cat.budget)}</div>
-                            </div>
-                          </div>
-                          <button onClick={() => deleteCategory(key)} className={`rounded-lg px-4 py-2 text-sm font-medium transition ${darkMode ? "bg-red-900/30 text-red-300 hover:bg-red-900/50" : "bg-red-50 text-red-700 hover:bg-red-100"}`}>🗑️ Supprimer</button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className={`rounded-2xl p-6 shadow-lg ${darkMode ? "bg-gray-800" : "bg-white"}`}>
                   <div className="mb-4 flex items-center justify-between">
-                    <h4 className={`text-lg font-bold ${darkMode ? "text-white" : "text-gray-800"}`}>📝 Toutes les catégories de dépenses</h4>
-                    <button onClick={() => { setIsCreatingNew(true); setNewCategoryName(''); setNewCategoryBudget(''); setNewCategoryColor('#6366F1'); setNewCategoryShowInDashboard(false); }} className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${darkMode ? "bg-green-900/30 text-green-300 hover:bg-green-900/50" : "bg-green-50 text-green-700 hover:bg-green-100"}`}>➕ Nouvelle catégorie</button>
+                    <h4 className={`text-lg font-bold ${darkMode ? "text-white" : "text-gray-800"}`}>
+                      📊 Catégories de dépenses
+                    </h4>
+                    <button
+                      onClick={() => {
+                        setIsCreatingNew(true);
+                        setNewCategoryName('');
+                        setNewCategoryBudget('');
+                        setNewCategoryColor('#6366F1');
+                        setNewCategoryShowInDashboard(false);
+                      }}
+                      className={`rounded-full h-10 w-10 flex items-center justify-center text-2xl font-bold transition ${
+                        darkMode 
+                          ? "bg-green-900/30 text-green-300 hover:bg-green-900/50" 
+                          : "bg-green-50 text-green-700 hover:bg-green-100"
+                      }`}
+                      title="Nouvelle catégorie"
+                    >
+                      +
+                    </button>
                   </div>
-                  <p className={`text-sm mb-4 ${darkMode ? "text-gray-400" : "text-gray-600"}`}>Catégories disponibles dans le formulaire</p>
                   
+                  {/* Formulaire création nouvelle catégorie */}
                   {isCreatingNew && (
                     <div className={`mb-4 rounded-lg p-4 ${darkMode ? "bg-gray-700 border-2 border-green-600" : "bg-green-50 border-2 border-green-300"}`}>
                       <div className="space-y-3">
@@ -1638,7 +1691,11 @@
                           value={newCategoryName}
                           onChange={(e) => setNewCategoryName(e.target.value)}
                           placeholder="Nom de la catégorie"
-                          className={`w-full rounded-lg border-2 px-4 py-2 ${darkMode ? "bg-gray-600 border-gray-500 text-white" : "bg-white border-gray-300"}`}
+                          className={`w-full rounded-lg border-2 px-4 py-2 ${
+                            darkMode 
+                              ? "bg-gray-600 border-gray-500 text-white" 
+                              : "bg-white border-gray-300"
+                          }`}
                         />
                         <div className="flex gap-3">
                           <div className="flex-1">
@@ -1647,7 +1704,11 @@
                               value={newCategoryBudget}
                               onChange={(e) => setNewCategoryBudget(e.target.value)}
                               placeholder="Budget (€)"
-                              className={`w-full rounded-lg border-2 px-4 py-2 ${darkMode ? "bg-gray-600 border-gray-500 text-white" : "bg-white border-gray-300"}`}
+                              className={`w-full rounded-lg border-2 px-4 py-2 ${
+                                darkMode 
+                                  ? "bg-gray-600 border-gray-500 text-white" 
+                                  : "bg-white border-gray-300"
+                              }`}
                             />
                           </div>
                           <div className="flex items-center gap-2">
@@ -1679,7 +1740,11 @@
                           </button>
                           <button
                             onClick={() => setIsCreatingNew(false)}
-                            className={`flex-1 rounded-lg px-4 py-2 text-sm font-semibold ${darkMode ? "bg-gray-600 text-white hover:bg-gray-500" : "bg-gray-200 text-gray-700 hover:bg-gray-300"}`}
+                            className={`flex-1 rounded-lg px-4 py-2 text-sm font-semibold ${
+                              darkMode 
+                                ? "bg-gray-600 text-white hover:bg-gray-500" 
+                                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                            }`}
                           >
                             ❌ Annuler
                           </button>
@@ -1688,14 +1753,170 @@
                     </div>
                   )}
                   
-                  <div className="space-y-2">
-                    {Object.entries(monthlyBudget.categories).map(([key, cat]) => (
-                      <div key={`all-${key}`} className={`rounded-lg p-3 flex items-center justify-between ${darkMode ? "bg-gray-700" : "bg-gray-50"}`}>
-                        <div className="flex items-center gap-3">
-                          <div className="h-4 w-4 rounded-full" style={{ backgroundColor: cat.color }}></div>
-                          <span className={`font-medium ${darkMode ? "text-white" : "text-gray-800"}`}>{cat.nom}</span>
-                        </div>
-                        <button onClick={() => deleteCategory(key)} className={`rounded-lg px-4 py-2 text-sm font-medium transition ${darkMode ? "bg-red-900/30 text-red-300 hover:bg-red-900/50" : "bg-red-50 text-red-700 hover:bg-red-100"}`}>🗑️ Supprimer</button>
+                  {/* Phrase explicative */}
+                  <div className={`mb-3 text-xs italic ${darkMode ? "text-gray-400" : "text-gray-600"}`}>
+                    💡 Les catégories marquées "Affichée sur l'accueil" apparaissent sous forme d'encadré sur la page principale
+                  </div>
+                  
+                  <div className="space-y-3">
+                    {/* Afficher TOUTES les catégories y compris exceptionnel et depense */}
+                    {Object.entries(monthlyBudget.categories)
+                      .concat([
+                        ['exceptionnel', { nom: 'Exceptionnel', budget: 0, color: '#9CA3AF', showInDashboard: false }],
+                        ['depense', { nom: 'Autre dépense', budget: 0, color: '#6B7280', showInDashboard: false }]
+                      ])
+                      .filter(([key, cat], index, self) => 
+                        // Éviter les doublons si exceptionnel/depense existent déjà
+                        self.findIndex(([k]) => k === key) === index
+                      )
+                      .map(([key, cat]) => (
+                      <div 
+                        key={key}
+                        className={`rounded-lg p-4 ${darkMode ? "bg-gray-700" : "bg-gray-50"}`}
+                      >
+                        {editingCategory === key ? (
+                          <div className="space-y-3">
+                            <input
+                              type="text"
+                              value={newCategoryName}
+                              onChange={(e) => setNewCategoryName(e.target.value)}
+                              placeholder="Nom de la catégorie"
+                              className={`w-full rounded-lg border-2 px-4 py-2 ${
+                                darkMode 
+                                  ? "bg-gray-600 border-gray-500 text-white" 
+                                  : "bg-white border-gray-300"
+                              }`}
+                            />
+                            <div className="flex gap-3">
+                              <div className="flex-1">
+                                <input
+                                  type="number"
+                                  value={newCategoryBudget}
+                                  onChange={(e) => setNewCategoryBudget(e.target.value)}
+                                  placeholder="Budget (€)"
+                                  className={`w-full rounded-lg border-2 px-4 py-2 ${
+                                    darkMode 
+                                      ? "bg-gray-600 border-gray-500 text-white" 
+                                      : "bg-white border-gray-300"
+                                  }`}
+                                />
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="color"
+                                  value={newCategoryColor}
+                                  onChange={(e) => setNewCategoryColor(e.target.value)}
+                                  className="h-10 w-16 cursor-pointer rounded-lg border-2"
+                                />
+                              </div>
+                            </div>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={newCategoryShowInDashboard}
+                                onChange={(e) => setNewCategoryShowInDashboard(e.target.checked)}
+                                className="h-5 w-5 cursor-pointer rounded"
+                              />
+                              <span className={`text-sm ${darkMode ? "text-gray-300" : "text-gray-700"}`}>
+                                Afficher un encadré sur la page d'accueil
+                              </span>
+                            </label>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => {
+                                  if (newCategoryName && newCategoryBudget) {
+                                    setMonthlyBudget({
+                                      ...monthlyBudget,
+                                      categories: {
+                                        ...monthlyBudget.categories,
+                                        [key]: {
+                                          nom: newCategoryName,
+                                          budget: parseAmount(newCategoryBudget),
+                                          color: newCategoryColor,
+                                          showInDashboard: newCategoryShowInDashboard
+                                        }
+                                      }
+                                    });
+                                    setEditingCategory(null);
+                                  }
+                                }}
+                                className="flex-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700"
+                              >
+                                ✅ Enregistrer
+                              </button>
+                              <button
+                                onClick={() => setEditingCategory(null)}
+                                className={`flex-1 rounded-lg px-4 py-2 text-sm font-semibold ${
+                                  darkMode 
+                                    ? "bg-gray-600 text-white hover:bg-gray-500" 
+                                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                                }`}
+                              >
+                                ❌ Annuler
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div
+                                className="h-6 w-6 rounded-full"
+                                style={{ backgroundColor: cat.color }}
+                              ></div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <div className={`font-bold ${darkMode ? "text-white" : "text-gray-800"}`}>
+                                    {cat.nom}
+                                  </div>
+                                  {cat.showInDashboard && (
+                                    <span className={`text-xs px-2 py-0.5 rounded ${darkMode ? "bg-indigo-900/30 text-indigo-300" : "bg-indigo-100 text-indigo-700"}`}>
+                                      Affichée sur l'accueil
+                                    </span>
+                                  )}
+                                </div>
+                                <div className={`text-sm ${darkMode ? "text-gray-400" : "text-gray-600"}`}>
+                                  Budget : {formatMoney(cat.budget)}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              {/* Bouton Éditer avec icône SVG */}
+                              <button
+                                onClick={() => {
+                                  setEditingCategory(key);
+                                  setNewCategoryName(cat.nom);
+                                  setNewCategoryBudget(cat.budget.toString());
+                                  setNewCategoryColor(cat.color);
+                                  setNewCategoryShowInDashboard(cat.showInDashboard !== false);
+                                }}
+                                className={`rounded-lg px-3 py-2 transition ${
+                                  darkMode 
+                                    ? "bg-indigo-900/30 text-indigo-300 hover:bg-indigo-900/50" 
+                                    : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                                }`}
+                                title="Modifier"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                              </button>
+                              {/* Bouton Supprimer avec icône SVG */}
+                              <button
+                                onClick={() => deleteCategory(key)}
+                                className={`rounded-lg px-3 py-2 transition ${
+                                  darkMode 
+                                    ? "bg-red-900/30 text-red-300 hover:bg-red-900/50" 
+                                    : "bg-red-50 text-red-700 hover:bg-red-100"
+                                }`}
+                                title="Supprimer"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1764,18 +1985,14 @@
                   <button onClick={() => setView('dashboard')} className={`flex flex-col items-center gap-1 px-2 py-2 transition ${view === 'dashboard' ? 'text-indigo-600' : (darkMode ? 'text-gray-400' : 'text-gray-500')}`}>
                     <Target size={22} /><span className="text-xs font-medium">Budget</span>
                   </button>
-                  {monthlyBudget.showPEAPage !== false && (
-                    <button onClick={() => setView('pea')} className={`flex flex-col items-center gap-1 px-2 py-2 transition ${view === 'pea' ? 'text-teal-600' : (darkMode ? 'text-gray-400' : 'text-gray-500')}`}>
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                      <span className="text-xs font-medium">PEA</span>
-                    </button>
-                  )}
-                  {monthlyBudget.showCryptoPage !== false && (
-                    <button onClick={() => setView('crypto')} className={`flex flex-col items-center gap-1 px-2 py-2 transition ${view === 'crypto' ? 'text-emerald-600' : (darkMode ? 'text-gray-400' : 'text-gray-500')}`}>
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-                      <span className="text-xs font-medium">Crypto</span>
-                    </button>
-                  )}
+                  <button onClick={() => setView('pea')} className={`flex flex-col items-center gap-1 px-2 py-2 transition ${view === 'pea' ? 'text-teal-600' : (darkMode ? 'text-gray-400' : 'text-gray-500')}`}>
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                    <span className="text-xs font-medium">PEA</span>
+                  </button>
+                  <button onClick={() => setView('crypto')} className={`flex flex-col items-center gap-1 px-2 py-2 transition ${view === 'crypto' ? 'text-emerald-600' : (darkMode ? 'text-gray-400' : 'text-gray-500')}`}>
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                    <span className="text-xs font-medium">Crypto</span>
+                  </button>
                   <button onClick={() => setView('historique')} className={`flex flex-col items-center gap-1 px-2 py-2 transition ${view === 'historique' ? 'text-indigo-600' : (darkMode ? 'text-gray-400' : 'text-gray-500')}`}>
                     <List size={22} /><span className="text-xs font-medium">Historique</span>
                   </button>
@@ -2019,23 +2236,14 @@
                     
                     <form onSubmit={handleAddDepense} className="space-y-4">
                       <div>
-                        <label className={`mb-2 block text-sm font-medium ${darkMode ? "text-gray-300" : "text-gray-700"}`}>Catégorie</label>
-                        <div className="grid grid-cols-2 gap-2">
+                        <label className={`mb-1 block text-sm font-medium ${darkMode ? "text-gray-300" : "text-gray-700"}`}>Catégorie</label>
+                        <select value={newDepense.categorie} onChange={(e) => setNewDepense({...newDepense, categorie: e.target.value})} className={`w-full rounded-xl border px-4 py-3 focus:outline-none focus:ring-2 ${darkMode ? "bg-gray-700 border-gray-600 text-white focus:border-indigo-400 focus:ring-indigo-500/50" : "border-gray-300 focus:border-indigo-500 focus:ring-indigo-200"}`}>
                           {Object.entries(monthlyBudget.categories).map(([key, cat]) => (
-                            <button key={key} type="button" onClick={() => setNewDepense({...newDepense, categorie: key})} className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition ${newDepense.categorie === key ? (darkMode ? "bg-indigo-600 text-white" : "bg-indigo-100 text-indigo-900") : (darkMode ? "bg-gray-700 text-gray-300 hover:bg-gray-600" : "bg-gray-50 text-gray-700 hover:bg-gray-100")}`}>
-                              <div className="h-3 w-3 rounded-full" style={{ backgroundColor: cat.color }}></div>
-                              <span>{cat.nom}</span>
-                            </button>
+                            <option key={key} value={key}>{cat.nom}</option>
                           ))}
-                          <button type="button" onClick={() => setNewDepense({...newDepense, categorie: 'exceptionnel'})} className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition ${newDepense.categorie === 'exceptionnel' ? (darkMode ? "bg-orange-600 text-white" : "bg-orange-100 text-orange-900") : (darkMode ? "bg-gray-700 text-gray-300 hover:bg-gray-600" : "bg-gray-50 text-gray-700 hover:bg-gray-100")}`}>
-                            <div className="h-3 w-3 rounded-full bg-orange-500"></div>
-                            <span>Charge exceptionnelle</span>
-                          </button>
-                          <button type="button" onClick={() => setNewDepense({...newDepense, categorie: 'depense'})} className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition ${newDepense.categorie === 'depense' ? (darkMode ? "bg-gray-600 text-white" : "bg-gray-200 text-gray-900") : (darkMode ? "bg-gray-700 text-gray-300 hover:bg-gray-600" : "bg-gray-50 text-gray-700 hover:bg-gray-100")}`}>
-                            <div className="h-3 w-3 rounded-full bg-gray-500"></div>
-                            <span>Dépense</span>
-                          </button>
-                        </div>
+                          <option value="exceptionnel">Charge exceptionnelle</option>
+                          <option value="depense">Dépense</option>
+                        </select>
                       </div>
                       
                       <div>
