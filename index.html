@@ -1642,10 +1642,24 @@
               if (confirm(`Supprimer la catégorie "${monthlyBudget.categories[key].nom}" ?\n\nAttention : Les dépenses de cette catégorie resteront dans l'historique.`)) {
                 const newCategories = { ...monthlyBudget.categories };
                 delete newCategories[key];
-                setMonthlyBudget({
+                const newMonthlyBudget = {
                   ...monthlyBudget,
                   categories: newCategories
-                });
+                };
+                setMonthlyBudget(newMonthlyBudget);
+                
+                // Sauvegarder immédiatement dans Firebase
+                if (user) {
+                  db.collection('users')
+                    .doc(user.uid)
+                    .collection('data')
+                    .doc('budget')
+                    .update({
+                      'monthlyBudget.categories': newCategories
+                    })
+                    .then(() => console.log(`✅ Catégorie ${key} supprimée de Firebase`))
+                    .catch((error) => console.error('Erreur suppression catégorie:', error));
+                }
               }
             };
             
