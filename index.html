@@ -591,6 +591,11 @@
           };
 
           const handleDeleteDepense = (id) => {
+            const depense = depenses.find(d => d.id === id);
+            if (depense && depense.deduireDuSolde !== false) {
+              // Restituer le montant au solde réel
+              setSoldeCompte(prevSolde => prevSolde + parseAmount(depense.montant));
+            }
             setDepenses(depenses.filter(d => d.id !== id));
           };
 
@@ -1219,6 +1224,19 @@
             
             const totalVersementsMois = versementsMois.reduce((sum, dep) => sum + dep.montant, 0);
 
+            // Calculer les projections pour affichage
+            const versementMensuel = monthlyBudget.categories.pea?.budget || 100;
+            const tauxAnnuel = 0.07;
+            const calculerValeurFuture = (annees) => {
+              const mois = annees * 12;
+              const tauxMensuel = tauxAnnuel / 12;
+              return versementMensuel * (((1 + tauxMensuel) ** mois - 1) / tauxMensuel) * (1 + tauxMensuel);
+            };
+            const projection10ans = calculerValeurFuture(10);
+            const projection20ans = calculerValeurFuture(20);
+            const projection30ans = calculerValeurFuture(30);
+            const projection50ans = calculerValeurFuture(50);
+
             // Créer graphique de projection avec intérêts composés
             useEffect(() => {
               if (chartRef.current && view === 'pea') {
@@ -1230,7 +1248,7 @@
 
                 // Calcul avec intérêts composés à 7% annuel
                 const tauxAnnuel = 0.07;
-                const versementMensuel = 100; // Budget PEA mensuel
+                const versementMensuel = monthlyBudget.categories.pea?.budget || 100; // Budget PEA mensuel depuis les paramètres
                 
                 const calculerValeurFuture = (annees) => {
                   const mois = annees * 12;
@@ -1300,7 +1318,7 @@
                   chartInstance.current.destroy();
                 }
               };
-            }, [view]);
+            }, [view, monthlyBudget.categories.pea]);
             
             return (
               <div className="space-y-6">
@@ -1409,7 +1427,7 @@
                 <div className={`rounded-2xl p-6 shadow-lg ${darkMode ? "bg-gray-800" : "bg-white"}`}>
                   <h4 className={`mb-2 text-xl font-bold ${darkMode ? "text-white" : "text-gray-800"}`}>🚀 Projection sur le long terme</h4>
                   <p className={`mb-4 text-sm ${darkMode ? "text-gray-400" : "text-gray-600"}`}>
-                    Avec {formatMoney(100)} / mois et un rendement annuel de 7% (moyenne historique des marchés)
+                    Avec {formatMoney(monthlyBudget.categories.pea?.budget || 100)} / mois et un rendement annuel de 7% (moyenne historique des marchés)
                   </p>
                   
                   <div style={{ height: '300px' }}>
@@ -1419,19 +1437,27 @@
                   <div className="mt-4 grid grid-cols-2 gap-3">
                     <div className={`rounded-lg p-3 ${darkMode ? "bg-teal-900/30" : "bg-teal-50"}`}>
                       <div className={`text-xs ${darkMode ? "text-teal-300" : "text-teal-700"}`}>Dans 10 ans</div>
-                      <div className={`text-lg font-bold ${darkMode ? "text-teal-200" : "text-teal-900"}`}>≈ 17 409 €</div>
+                      <div className={`text-lg font-bold ${darkMode ? "text-teal-200" : "text-teal-900"}`}>
+                        ≈ {formatMoney(projection10ans).replace(',00', '')}
+                      </div>
                     </div>
                     <div className={`rounded-lg p-3 ${darkMode ? "bg-cyan-900/30" : "bg-cyan-50"}`}>
                       <div className={`text-xs ${darkMode ? "text-cyan-300" : "text-cyan-700"}`}>Dans 20 ans</div>
-                      <div className={`text-lg font-bold ${darkMode ? "text-cyan-200" : "text-cyan-900"}`}>≈ 52 397 €</div>
+                      <div className={`text-lg font-bold ${darkMode ? "text-cyan-200" : "text-cyan-900"}`}>
+                        ≈ {formatMoney(projection20ans).replace(',00', '')}
+                      </div>
                     </div>
                     <div className={`rounded-lg p-3 ${darkMode ? "bg-blue-900/30" : "bg-blue-50"}`}>
                       <div className={`text-xs ${darkMode ? "text-blue-300" : "text-blue-700"}`}>Dans 30 ans</div>
-                      <div className={`text-lg font-bold ${darkMode ? "text-blue-200" : "text-blue-900"}`}>≈ 122 709 €</div>
+                      <div className={`text-lg font-bold ${darkMode ? "text-blue-200" : "text-blue-900"}`}>
+                        ≈ {formatMoney(projection30ans).replace(',00', '')}
+                      </div>
                     </div>
                     <div className={`rounded-lg p-3 ${darkMode ? "bg-indigo-900/30" : "bg-indigo-50"}`}>
                       <div className={`text-xs ${darkMode ? "text-indigo-300" : "text-indigo-700"}`}>Dans 50 ans</div>
-                      <div className={`text-lg font-bold ${darkMode ? "text-indigo-200" : "text-indigo-900"}`}>≈ 528 936 €</div>
+                      <div className={`text-lg font-bold ${darkMode ? "text-indigo-200" : "text-indigo-900"}`}>
+                        ≈ {formatMoney(projection50ans).replace(',00', '')}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1712,12 +1738,16 @@
                             />
                           </div>
                           <div className="flex items-center gap-2">
-                            <input
-                              type="color"
-                              value={newCategoryColor}
-                              onChange={(e) => setNewCategoryColor(e.target.value)}
-                              className="h-10 w-16 cursor-pointer rounded-lg border-2"
-                            />
+                            <div className="relative">
+                              <input
+                                type="color"
+                                value={newCategoryColor}
+                                onChange={(e) => setNewCategoryColor(e.target.value)}
+                                className="h-8 w-12 cursor-pointer rounded-lg border-2 border-gray-300"
+                                title="Choisir une couleur"
+                              />
+                              <div className="absolute -top-1 -right-1 text-xs">🎨</div>
+                            </div>
                           </div>
                         </div>
                         <label className="flex items-center gap-2 cursor-pointer">
@@ -1728,7 +1758,7 @@
                             className="h-5 w-5 cursor-pointer rounded"
                           />
                           <span className={`text-sm ${darkMode ? "text-gray-300" : "text-gray-700"}`}>
-                            Afficher un encadré sur la page d'accueil
+                            Afficher sur la page d'accueil
                           </span>
                         </label>
                         <div className="flex gap-2">
@@ -1802,12 +1832,16 @@
                                 />
                               </div>
                               <div className="flex items-center gap-2">
-                                <input
-                                  type="color"
-                                  value={newCategoryColor}
-                                  onChange={(e) => setNewCategoryColor(e.target.value)}
-                                  className="h-10 w-16 cursor-pointer rounded-lg border-2"
-                                />
+                                <div className="relative">
+                                  <input
+                                    type="color"
+                                    value={newCategoryColor}
+                                    onChange={(e) => setNewCategoryColor(e.target.value)}
+                                    className="h-8 w-12 cursor-pointer rounded-lg border-2 border-gray-300"
+                                    title="Choisir une couleur"
+                                  />
+                                  <div className="absolute -top-1 -right-1 text-xs">🎨</div>
+                                </div>
                               </div>
                             </div>
                             <label className="flex items-center gap-2 cursor-pointer">
@@ -1818,7 +1852,7 @@
                                 className="h-5 w-5 cursor-pointer rounded"
                               />
                               <span className={`text-sm ${darkMode ? "text-gray-300" : "text-gray-700"}`}>
-                                Afficher un encadré sur la page d'accueil
+                                Afficher sur la page d'accueil
                               </span>
                             </label>
                             <div className="flex gap-2">
